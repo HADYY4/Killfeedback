@@ -19,13 +19,15 @@ import kotlin.math.roundToInt
  */
 class KillFeedbackConfigScreen(
     private val parent: Screen?,
-) : Screen(Text.literal("KillFeedback 配置")) {
+    initialTab: String? = null,
+) : Screen(Text.literal("击杀反馈配置")) {
 
     private enum class Tab(val label: String) {
         GENERAL("常规"),
         HUD_STATS("HUD 与统计"),
         STYLE("样式"),
         COLOR("颜色"),
+        COINS("金币统计"),
     }
 
     private data class RowInfo(
@@ -40,16 +42,16 @@ class KillFeedbackConfigScreen(
         val apply: (String) -> Unit,
     )
 
-    private var tab = Tab.GENERAL
+    private var tab = initialTab?.let { runCatching { Tab.valueOf(it) }.getOrNull() } ?: Tab.GENERAL
     private var draft = KillFeedbackConfigManager.config.copy()
-    private var selectedRow = 0
+    private var selectedRow = if (tab == Tab.COINS) -1 else 0
     private var openChoice: ChoiceSpec? = null
     private var error: String? = null
     private val rows = mutableListOf<RowInfo>()
 
-    private val rowHeight = 15
-    private val controlHeight = 13
-    private val contentTop = 40
+    private val rowHeight = 18
+    private val controlHeight = 16
+    private val contentTop = 44
     private val leftWidth get() = width / 2
     private val rightX get() = leftWidth + 6
     private val rightWidth get() = width - rightX - 8
@@ -62,12 +64,12 @@ class KillFeedbackConfigScreen(
         rows.clear()
         error = null
 
-        val tabWidth = (width - 20) / 4
+        val tabWidth = (width - 20) / Tab.entries.size
         Tab.entries.forEachIndexed { index, value ->
             addDrawableChild(
                 ButtonWidget.builder(Text.literal(if (value == tab) "● ${value.label}" else value.label)) {
                     tab = value
-                    selectedRow = 0
+                    selectedRow = if (value == Tab.COINS) -1 else 0
                     openChoice = null
                     init()
                 }.dimensions(10 + index * tabWidth, 17, tabWidth - 4, 18).build(),
@@ -79,6 +81,7 @@ class KillFeedbackConfigScreen(
             Tab.HUD_STATS -> initHudStats()
             Tab.STYLE -> initStyle()
             Tab.COLOR -> initColors()
+            Tab.COINS -> initCoinsInfo()
         }
 
         val bottomY = height - 24
@@ -100,7 +103,11 @@ class KillFeedbackConfigScreen(
         )
 
         openChoice?.let { buildChoicePopup(it) }
-        selectedRow = selectedRow.coerceIn(0, rows.lastIndex.coerceAtLeast(0))
+        selectedRow = if (tab == Tab.COINS) {
+            selectedRow.coerceIn(-1, rows.lastIndex.coerceAtLeast(0))
+        } else {
+            selectedRow.coerceIn(0, rows.lastIndex.coerceAtLeast(0))
+        }
     }
 
     private fun initGeneral() {
@@ -125,9 +132,10 @@ class KillFeedbackConfigScreen(
             draft.includeOverlay,
         ) { draft.includeOverlay = it }
 
+
         val patternRow = addRow(
             "奖励正则",
-            "用于识别奖励消息。默认识别“! 你获得了 2 金币，来自于 Lv.5 荒林羊”。保存时会校验正则。",
+            "用于识别奖励消息。默认识别“! 你获得了 2 金币，来自于 Lv.5 荒林羊”，并支持金币后的 VIP/加成括号说明。保存时会校验正则。",
             "正则",
         )
         val field = TextFieldWidget(
@@ -293,11 +301,217 @@ class KillFeedbackConfigScreen(
         ) { draft.progressHeight = it }
 
         addToggleRow(
-            "金额滚动",
+            "数字滚动动画",
             "新条目出现时让金额从 0 滚动到实际值。",
-            "滚动",
+            "数字滚动动画",
             draft.amountScroll,
         ) { draft.amountScroll = it }
+
+        addToggleRow(
+            "下移动画",
+            "新条目加入时旧条目平滑下移。关闭后位置立即更新。",
+            "下移",
+            draft.entryPushAnimation,
+        ) { draft.entryPushAnimation = it }
+
+        addToggleRow(
+            "逐字显示",
+            "怪物等级和名称从右往左逐字出现。",
+            "逐字",
+            draft.textRevealAnimation,
+        ) { draft.textRevealAnimation = it }
+    }
+
+    private fun initCoinsInfo() {
+        addToggleRow(
+            "启用金币统计",
+            "显示独立于 KillFeedback 统计窗口的会话金币 HUD。",
+            "启用",
+            draft.coinsInfoEnabled,
+        ) { draft.coinsInfoEnabled = it }
+
+        addToggleRow(
+            "双行显示",
+            "第一行显示总金币，第二行显示平均值。",
+            "双行",
+            draft.coinsInfoTwoLines,
+        ) { draft.coinsInfoTwoLines = it }
+
+        addToggleRow(
+            "显示总金币",
+            "显示会话累计金币。",
+            "总金币",
+            draft.coinsInfoShowTotal,
+        ) { draft.coinsInfoShowTotal = it }
+
+        addToggleRow(
+            "显示平均值",
+            "显示 avg/min 或 avg/h。",
+            "平均值",
+            draft.coinsInfoShowAverage,
+        ) { draft.coinsInfoShowAverage = it }
+
+        addToggleRow(
+            "显示会话时间",
+            "在金币统计上方显示本次会话时长。",
+            "时长",
+            draft.coinsInfoShowSessionTime,
+        ) { draft.coinsInfoShowSessionTime = it }
+
+        addToggleRow(
+            "显示总击杀",
+            "在金币统计上方显示本次会话总击杀数。",
+            "击杀",
+            draft.coinsInfoShowKills,
+        ) { draft.coinsInfoShowKills = it }
+
+        addToggleRow(
+            "数字滚动动画",
+            "总金币和平均值使用缓动滚动，并用会话级宽度缓存稳定布局。",
+            "数字滚动动画",
+            draft.coinsInfoScroll,
+        ) { draft.coinsInfoScroll = it }
+
+        addToggleRow(
+            "文字阴影",
+            "为金币统计的文字绘制阴影。",
+            "阴影",
+            draft.coinsInfoTextShadow,
+        ) { draft.coinsInfoTextShadow = it }
+
+        addChoiceRow(
+            "平均单位",
+            "平均值按分钟或小时计算。",
+            "单位",
+            listOf("MINUTE" to "avg/min", "HOUR" to "avg/h"),
+            draft.coinsInfoAverageUnit,
+        ) { draft.coinsInfoAverageUnit = it }
+
+        addChoiceRow(
+            "数字格式",
+            "金币和平均值的显示格式。",
+            "格式",
+            listOf("RAW" to "原始", "COMMA" to "千分位", "SHORT" to "缩写"),
+            draft.coinsInfoNumberFormat,
+        ) { draft.coinsInfoNumberFormat = it }
+
+        addSliderRow(
+            "CoinsInfo 缩放",
+            "独立 HUD 的整体缩放。",
+            "缩放",
+            draft.coinsInfoScale,
+            0.5f,
+            2.5f,
+            0.05f,
+            display = { "%.2f".format(it) },
+        ) { draft.coinsInfoScale = it }
+
+        addSliderRow(
+            "水平位置",
+            "CoinsInfo 在屏幕上的水平百分比。",
+            "X",
+            draft.coinsInfoX,
+            0f,
+            100f,
+            1f,
+            display = { "${it.roundToInt()}%" },
+        ) { draft.coinsInfoX = it }
+
+        addSliderRow(
+            "垂直位置",
+            "CoinsInfo 在屏幕上的垂直百分比。",
+            "Y",
+            draft.coinsInfoY,
+            0f,
+            100f,
+            1f,
+            display = { "${it.roundToInt()}%" },
+        ) { draft.coinsInfoY = it }
+
+        addToggleRow(
+            "右上角对齐",
+            "开启后按屏幕右侧计算水平位置。",
+            "右上",
+            draft.coinsInfoRight,
+        ) { draft.coinsInfoRight = it }
+
+        addColorRow(
+            "总金币颜色",
+            "默认与 KillFeedback 统计文本一致。",
+            "总金币",
+            draft.coinsInfoTotalColor,
+        ) { draft.coinsInfoTotalColor = it }
+
+        addColorRow(
+            "平均值颜色",
+            "默认与总金币颜色相同。",
+            "平均值",
+            draft.coinsInfoAverageColor,
+        ) { draft.coinsInfoAverageColor = it }
+
+        addColorRow(
+            "会话时间颜色",
+            "金币统计顶部会话时间的颜色。",
+            "时长",
+            draft.coinsInfoSessionTimeColor,
+        ) { draft.coinsInfoSessionTimeColor = it }
+
+        addColorRow(
+            "总击杀颜色",
+            "金币统计顶部总击杀数的颜色。",
+            "击杀",
+            draft.coinsInfoKillsColor,
+        ) { draft.coinsInfoKillsColor = it }
+
+        addColorRow(
+            "分隔条颜色",
+            "金币统计顶部横条的颜色。",
+            "分隔条",
+            draft.coinsInfoDividerColor,
+        ) { draft.coinsInfoDividerColor = it }
+
+        addColorRow(
+            "分隔条背景色",
+            "金币统计顶部横条的背景颜色。",
+            "分隔条背景",
+            draft.coinsInfoDividerBackground,
+        ) { draft.coinsInfoDividerBackground = it }
+
+        addToggleRow(
+            "显示背景",
+            "在金币统计后方绘制背景。",
+            "背景",
+            draft.coinsInfoBackground,
+        ) { draft.coinsInfoBackground = it }
+
+        addColorRow(
+            "背景颜色",
+            "金币统计背景颜色，包含 alpha。",
+            "背景",
+            draft.coinsInfoBackgroundColor,
+        ) { draft.coinsInfoBackgroundColor = it }
+
+        addToggleRow(
+            "显示边框",
+            "绘制金币统计外边框。",
+            "边框",
+            draft.coinsInfoOutline,
+        ) { draft.coinsInfoOutline = it }
+
+        addColorRow(
+            "边框颜色",
+            "金币统计外边框颜色。",
+            "边框",
+            draft.coinsInfoOutlineColor,
+        ) { draft.coinsInfoOutlineColor = it }
+
+        addDrawableChild(
+            ButtonWidget.builder(Text.literal("重置金币统计")) {
+                CoinsSession.reset()
+                selectedRow = -1
+                init()
+            }.dimensions(rightX + rightWidth - 107, height - 59, 100, 18).build(),
+        )
     }
 
     private fun initColors() {
@@ -436,6 +650,20 @@ class KillFeedbackConfigScreen(
             "背景",
             draft.background,
         ) { draft.background = it }
+
+        addToggleRow(
+            "HUD 边框",
+            "绘制 HUD 外边框。",
+            "边框",
+            draft.hudOutline,
+        ) { draft.hudOutline = it }
+
+        addToggleRow(
+            "文字阴影",
+            "为 HUD 文字绘制阴影。",
+            "阴影",
+            draft.hudTextShadow,
+        ) { draft.hudTextShadow = it }
 
         addToggleRow(
             "显示进度条",
@@ -693,7 +921,9 @@ class KillFeedbackConfigScreen(
             context.fill(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + 1, 0x80FFFFFF.toInt())
         }
 
-        rows.getOrNull(selectedRow)?.let { selected ->
+        if (tab == Tab.COINS && selectedRow < 0) {
+            drawCoinsDetails(context, rightTop)
+        } else rows.getOrNull(selectedRow)?.let { selected ->
             context.drawText(
                 textRenderer,
                 Text.literal(selected.title),
@@ -719,6 +949,50 @@ class KillFeedbackConfigScreen(
         error?.let {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(it), width / 2, height - 35, 0xFFFF5555.toInt())
         }
+    }
+
+    private fun drawCoinsDetails(context: DrawContext, top: Int) {
+        val snapshot = CoinsSession.snapshot()
+        val total = when (draft.coinsInfoNumberFormat.uppercase()) {
+            "RAW" -> KillRewardParser.formatCoins(snapshot.totalCoins)
+            "SHORT" -> {
+                val value = snapshot.totalCoins
+                when {
+                    value >= 1_000_000 -> "%.1fM".format(java.util.Locale.ROOT, value / 1_000_000)
+                    value >= 1_000 -> "%.1fK".format(java.util.Locale.ROOT, value / 1_000)
+                    else -> value.toInt().toString()
+                }
+            }
+            else -> String.format(java.util.Locale.ROOT, "%,.2f", snapshot.totalCoins).trimEnd('0').trimEnd('.')
+        }
+        val average = when (draft.coinsInfoAverageUnit.uppercase()) {
+            "HOUR" -> snapshot.averagePerHour()
+            else -> snapshot.averagePerMinute()
+        }
+        val unit = if (draft.coinsInfoAverageUnit.equals("HOUR", true)) "avg/h" else "avg/min"
+        val duration = formatSessionDuration(snapshot.elapsedMs)
+
+        context.drawText(textRenderer, Text.literal("详情"), rightX + 7, top + 6, 0xFFFFD23C.toInt(), false)
+        val lines = listOf(
+            "总金币：$total",
+            "平均值：${KillRewardParser.formatCoins(average)} $unit",
+            "会话时间：$duration",
+            "总击杀：${snapshot.totalKills}",
+        )
+        var y = top + 22
+        lines.forEach { line ->
+            context.drawText(textRenderer, Text.literal(line), rightX + 7, y, 0xFFDDDDDD.toInt(), false)
+            y += 11
+        }
+    }
+
+    private fun formatSessionDuration(ms: Long): String {
+        val seconds = (ms / 1000L).coerceAtLeast(0L)
+        val hours = seconds / 3600L
+        val minutes = (seconds % 3600L) / 60L
+        val secs = seconds % 60L
+        return if (hours > 0L) "%d:%02d:%02d".format(java.util.Locale.ROOT, hours, minutes, secs)
+        else "%02d:%02d".format(java.util.Locale.ROOT, minutes, secs)
     }
 
     private fun comboLabel(group: ComboGroup): String = when (group) {

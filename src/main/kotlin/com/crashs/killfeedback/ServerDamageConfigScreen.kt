@@ -66,6 +66,17 @@ class ServerDamageConfigScreen(
             controlWidth,
         ) { draft.serverDamageShadow = it }
 
+        addToggle(
+            "玩家受伤文本（-n）",
+            "将服务器生成的负数玩家受伤 TextDisplay 纳入本次服务端伤害显示控制。",
+            draft.serverDamagePlayerHurt,
+            contentTop + rowHeight * 4,
+            labelX,
+            controlX,
+            controlWidth,
+        ) { draft.serverDamagePlayerHurt = it }
+
+
         addDrawableChild(
             ButtonWidget.builder(Text.literal("保存")) {
                 KillFeedbackConfigManager.apply(draft)
@@ -82,6 +93,7 @@ class ServerDamageConfigScreen(
                 draft.serverDamageBackground = false
                 draft.serverDamageRemove = false
                 draft.serverDamageShadow = false
+                draft.serverDamagePlayerHurt = false
                 init()
             }.dimensions(width - 86, bottomY, 70, 18).build(),
         )

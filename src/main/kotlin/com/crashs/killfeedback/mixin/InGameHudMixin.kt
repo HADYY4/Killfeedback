@@ -1,5 +1,6 @@
 package com.crashs.killfeedback.mixin
 
+import com.crashs.killfeedback.CoinsInfoHud
 import com.crashs.killfeedback.KillFeedbackHud
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.hud.InGameHud
@@ -15,5 +16,6 @@ abstract class InGameHudMixin {
     @Inject(method = ["render"], at = [At("TAIL")])
     private fun renderKillFeedback(context: DrawContext, tickCounter: RenderTickCounter, callbackInfo: CallbackInfo) {
         KillFeedbackHud.render(context)
+        CoinsInfoHud.render(context)
     }
 }

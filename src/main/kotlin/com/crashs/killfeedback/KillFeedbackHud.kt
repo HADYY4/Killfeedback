@@ -17,11 +17,16 @@ object KillFeedbackHud {
     private const val PROGRESS_GAP = 3f
     private const val MIN_WIDTH = 86f
     private const val AMOUNT_SCROLL_MS = 600f
+    private const val MOB_REVEAL_MS = 260f
 
     private var displayedCoins = 0.0
     private var displayedKills = 0f
     private var lastTotalCoins = 0.0
     private var lastTotalKills = 0
+
+    private var widthGeneration = Long.MIN_VALUE
+    private var widthLayoutKey = Int.MIN_VALUE
+    private var cachedContentWidth = 0f
 
     fun render(context: DrawContext) {
         val client = MinecraftClient.getInstance()
@@ -52,19 +57,35 @@ object KillFeedbackHud {
             "KILLS_ONLY" -> config.showKills
             else -> true
         }
-        val contentWidth = max(
+        val targetContentWidth = max(
             MIN_WIDTH,
             max(
-                if (headerVisible) headerWidth(font, headerStyle, config) else 0f,
+                if (headerVisible) headerWidth(font, headerStyle, config, snapshot) else 0f,
                 snapshot.entries.maxOfOrNull { rowWidth(font, it, config) } ?: 0f,
             ) + PADDING * 2,
         )
+        val layoutKey = widthLayoutKey(config, headerStyle)
+        if (snapshot.generation != widthGeneration || layoutKey != widthLayoutKey) {
+            widthGeneration = snapshot.generation
+            widthLayoutKey = layoutKey
+            cachedContentWidth = targetContentWidth
+        } else {
+            cachedContentWidth = max(cachedContentWidth, targetContentWidth)
+        }
+        val contentWidth = cachedContentWidth
         val headerHeight = if (headerVisible) font.fontHeight + HEADER_GAP else 0f
         val progressHeight = if (config.showProgress) config.progressHeight.coerceIn(1f, 8f) + PROGRESS_GAP else 2f
         val rowHeight = max(12f, font.fontHeight + 2f)
         val rowSpacing = config.rowSpacing.coerceIn(0f, 8f)
-        val listHeight = if (snapshot.entries.isEmpty()) 0f else
-            snapshot.entries.size * rowHeight + (snapshot.entries.size - 1) * rowSpacing
+        val activeCount = snapshot.entries.count { !it.isFading }
+        val reserveEvictionRow = activeCount >= config.maxRows.coerceIn(1, 20)
+        val layoutRows = if (reserveEvictionRow) {
+            max(config.maxRows.coerceIn(1, 20) + 1, snapshot.entries.size)
+        } else {
+            snapshot.entries.size
+        }
+        val listHeight = if (layoutRows == 0) 0f else
+            layoutRows * rowHeight + (layoutRows - 1) * rowSpacing
         val height = PADDING * 2 + headerHeight + progressHeight + listHeight
 
         val screenWidth = context.scaledWindowWidth.toFloat()
@@ -85,7 +106,9 @@ object KillFeedbackHud {
         if (config.background) {
             roundedRect(context, 0f, 0f, contentWidth, height, 3f, config.backgroundColor)
         }
-        roundedOutline(context, 0f, 0f, contentWidth, height, config.outlineColor)
+        if (config.hudOutline) {
+            roundedOutline(context, 0f, 0f, contentWidth, height, config.outlineColor)
+        }
 
         var cursorY = PADDING
         if (headerVisible) {
@@ -96,20 +119,32 @@ object KillFeedbackHud {
         drawProgress(context, snapshot, now, contentWidth, cursorY, config)
         cursorY += progressHeight
 
-        val active = snapshot.entries.filter { !it.isFading }
-        val pendingId = if (active.size >= config.maxRows) active.lastOrNull()?.id else null
+        val rowPitch = rowHeight + rowSpacing
+        val pendingId = snapshot.entries
+            .filter { !it.isFading }
+            .takeIf { it.size >= config.maxRows }
+            ?.lastOrNull()
+            ?.id
 
         for (entry in snapshot.entries) {
             val age = now - entry.createdAt
             var alpha = entryAlpha(entry, now)
-            if (entry.id == pendingId) {
+            if (entry.evicted || entry.id == pendingId) {
                 alpha *= config.pendingEvictionAlpha.coerceIn(0.1f, 1f)
             }
             val insertOffset = if (age >= 160) 0f else (1f - easeOutCubic(age / 160f)) * 4f
-            if (alpha > 0.01f) {
-                drawRow(context, font, entry, contentWidth, cursorY + insertOffset, rowHeight, alpha, config)
+            val pushOffset = if (!config.entryPushAnimation) {
+                0f
+            } else {
+                entry.shiftedAt?.let { shiftedAt ->
+                    val progress = easeOutCubic(((now - shiftedAt) / 180f).coerceIn(0f, 1f))
+                    -(1f - progress) * rowPitch
+                } ?: 0f
             }
-            cursorY += rowHeight + rowSpacing
+            if (alpha > 0.01f) {
+                drawRow(context, font, entry, contentWidth, cursorY + pushOffset + insertOffset, rowHeight, alpha, now, config)
+            }
+            cursorY += rowPitch
         }
 
         context.matrices.popMatrix()
@@ -136,27 +171,27 @@ object KillFeedbackHud {
                     else -> ""
                 }
                 if (text.isNotEmpty()) {
-                    context.drawText(font, Text.literal(text), PADDING.toInt(), PADDING.toInt(), color, true)
+                    context.drawText(font, Text.literal(text), PADDING.toInt(), PADDING.toInt(), color, config.hudTextShadow)
                 }
             }
 
             "COINS_ONLY" -> if (config.showCoins) {
-                context.drawText(font, Text.literal(coins), PADDING.toInt(), PADDING.toInt(), color, true)
+                context.drawText(font, Text.literal(coins), PADDING.toInt(), PADDING.toInt(), color, config.hudTextShadow)
             }
 
             "KILLS_ONLY" -> if (config.showKills) {
-                context.drawText(font, Text.literal(kills), PADDING.toInt(), PADDING.toInt(), color, true)
+                context.drawText(font, Text.literal(kills), PADDING.toInt(), PADDING.toInt(), color, config.hudTextShadow)
             }
 
             "HIDDEN" -> Unit
 
             else -> {
                 if (config.showCoins) {
-                    context.drawText(font, Text.literal(coins), PADDING.toInt(), PADDING.toInt(), color, true)
+                    context.drawText(font, Text.literal(coins), PADDING.toInt(), PADDING.toInt(), color, config.hudTextShadow)
                 }
                 if (config.showKills) {
                     val killX = width - PADDING - font.getWidth(kills)
-                    context.drawText(font, Text.literal(kills), killX.roundToInt(), PADDING.toInt(), color, true)
+                    context.drawText(font, Text.literal(kills), killX.roundToInt(), PADDING.toInt(), color, config.hudTextShadow)
                 }
             }
         }
@@ -187,13 +222,17 @@ object KillFeedbackHud {
                 config.progressBackground,
             )
             if (fill > 0f) {
+                context.matrices.pushMatrix()
+                context.matrices.translate(x, y)
+                context.matrices.scale(fill, 1f)
                 context.fill(
-                    x.toInt(),
-                    y.toInt(),
-                    (x + barWidth * fill).toInt(),
-                    (y + barHeight).toInt(),
+                    0,
+                    0,
+                    barWidth.toInt(),
+                    barHeight.toInt(),
                     config.progressColor,
                 )
+                context.matrices.popMatrix()
             }
         } else {
             context.fill(x.toInt(), y.toInt(), (x + barWidth).toInt(), (y + 1f).toInt(), config.dividerColor)
@@ -208,6 +247,7 @@ object KillFeedbackHud {
         y: Float,
         rowHeight: Float,
         alpha: Float,
+        now: Long,
         config: KillFeedbackConfig,
     ) {
         val reward = entry.reward
@@ -229,27 +269,7 @@ object KillFeedbackHud {
         val textY = (y + (rowHeight - font.fontHeight) / 2f).roundToInt()
 
         if (config.showSource) {
-            var sourceX = (PADDING + 2f).roundToInt()
-            if (config.showLevel && reward.level != null) {
-                val levelText = "Lv.${reward.level} "
-                context.drawText(
-                    font,
-                    Text.literal(levelText),
-                    sourceX,
-                    textY,
-                    withAlpha(config.levelColor, alpha),
-                    true,
-                )
-                sourceX += font.getWidth(levelText)
-            }
-            context.drawText(
-                font,
-                Text.literal(reward.mob),
-                sourceX,
-                textY,
-                withAlpha(config.sourceColor, alpha),
-                true,
-            )
+            drawRevealedSource(context, font, entry, textY, alpha, now, config)
         }
         if (config.showAmount) {
             val amountX = (width - PADDING - font.getWidth(amount)).roundToInt()
@@ -264,17 +284,70 @@ object KillFeedbackHud {
         }
     }
 
+    private fun drawRevealedSource(
+        context: DrawContext,
+        font: net.minecraft.client.font.TextRenderer,
+        entry: KillFeedEntry,
+        textY: Int,
+        alpha: Float,
+        now: Long,
+        config: KillFeedbackConfig,
+    ) {
+        val reward = entry.reward
+        val segments = mutableListOf<Pair<String, Int>>()
+        if (config.showLevel && reward.level != null) {
+            segments += "Lv.${reward.level} " to config.levelColor
+        }
+        segments += reward.mob to config.sourceColor
+        if (segments.isEmpty()) return
+
+        val fullText = segments.joinToString("") { it.first }
+        if (fullText.isEmpty()) return
+        val fullWidth = font.getWidth(fullText)
+        val reveal = if (!config.textRevealAnimation) {
+            1f
+        } else {
+            easeOutCubic(((now - entry.createdAt) / MOB_REVEAL_MS).coerceIn(0f, 1f))
+        }
+        val visibleCount = (fullText.length * reveal).toInt().coerceIn(0, fullText.length)
+        if (visibleCount <= 0) return
+        val visibleStart = fullText.length - visibleCount
+        val visibleText = fullText.substring(visibleStart)
+        val visibleStartX = (PADDING + 2f) + fullWidth - font.getWidth(visibleText)
+
+        var segmentStart = 0
+        for ((segmentText, color) in segments) {
+            val segmentEnd = segmentStart + segmentText.length
+            val from = maxOf(visibleStart, segmentStart)
+            val to = segmentEnd
+            if (from < to) {
+                val part = segmentText.substring(from - segmentStart, to - segmentStart)
+                val partX = visibleStartX + font.getWidth(fullText.substring(visibleStart, from))
+                context.drawText(
+                    font,
+                    Text.literal(part),
+                    partX.roundToInt(),
+                    textY,
+                    withAlpha(color, alpha),
+                    config.hudTextShadow,
+                )
+            }
+            segmentStart = segmentEnd
+        }
+    }
+
     private fun headerWidth(
         font: net.minecraft.client.font.TextRenderer,
         style: String,
         config: KillFeedbackConfig,
+        snapshot: KillFeedSnapshot,
     ): Float {
-        val coins = "${formatNumber(displayedCoins, config)} Coins"
-        val kills = "${formatNumber(displayedKills.roundToInt().toDouble(), config)} Kills"
+        val coins = "${formatNumber(snapshot.totalCoins, config)} Coins"
+        val kills = "${formatNumber(snapshot.totalKills.toDouble(), config)} Kills"
         return when (style) {
             "HIDDEN" -> 0f
             "COMPACT" -> font.getWidth(
-                "${formatShort(displayedCoins)}c  ${formatShort(displayedKills.roundToInt().toDouble())}k",
+                "${formatShort(snapshot.totalCoins)}c  ${formatShort(snapshot.totalKills.toDouble())}k",
             ).toFloat()
             "COINS_ONLY" -> if (config.showCoins) font.getWidth(coins).toFloat() else 0f
             "KILLS_ONLY" -> if (config.showKills) font.getWidth(kills).toFloat() else 0f
@@ -309,6 +382,21 @@ object KillFeedbackHud {
         }
         return sourceWidth + amountWidth + 12f
     }
+
+    private fun widthLayoutKey(config: KillFeedbackConfig, headerStyle: String): Int = listOf(
+        config.hudScale,
+        headerStyle,
+        config.showCoins,
+        config.showKills,
+        config.showSource,
+        config.showLevel,
+        config.showAmount,
+        config.numberFormat,
+        config.maxRows,
+        config.rowSpacing,
+        config.entryDurationSeconds,
+        config.statsWindowSeconds,
+    ).hashCode()
 
     private fun animateTotals(snapshot: KillFeedSnapshot) {
         if (snapshot.totalKills < lastTotalKills || snapshot.totalCoins < lastTotalCoins) {

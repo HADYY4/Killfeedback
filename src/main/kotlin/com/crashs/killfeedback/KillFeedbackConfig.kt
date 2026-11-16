@@ -19,21 +19,25 @@ data class KillFeedbackConfig(
     var sound: Boolean = true,
     var soundVolume: Float = 1f,
     var soundPitch: Float = 1f,
-    var comboGroup: String = ComboGroup.CF.name,
-    var postMode: String = PostComboMode.LAST_OF_GROUP.name,
+    var comboGroup: String = ComboGroup.NONE.name,
+    var postMode: String = PostComboMode.SPECIFIC.name,
     var specificSound: String = PostComboSound.KILL_DF.name,
 
     var hud: Boolean = true,
     var hudScale: Float = 1f,
-    var hudRight: Boolean = true,
+    var hudRight: Boolean = false,
     // Percent of the scaled screen: 0 = anchored edge, 100 = opposite edge.
-    var hudX: Float = 2f,
-    var hudY: Float = 10f,
+    var hudX: Float = 50f,
+    var hudY: Float = 50f,
     var statsWindowSeconds: Float = 8f,
     var maxRows: Int = 5,
     var entryDurationSeconds: Float = 5f,
     var headerStyle: String = "FULL",
     var background: Boolean = false,
+    var hudOutline: Boolean = true,
+    var hudTextShadow: Boolean = true,
+    var entryPushAnimation: Boolean = true,
+    var textRevealAnimation: Boolean = true,
     var showProgress: Boolean = true,
     var showCoins: Boolean = true,
     var showKills: Boolean = true,
@@ -57,10 +61,47 @@ data class KillFeedbackConfig(
     var progressColor: Int = 0xFFFFD23C.toInt(),
     var progressBackground: Int = 0x40FFFFFF,
 
-    var serverDamageEnabled: Boolean = false,
-    var serverDamageBackground: Boolean = false,
+    var serverDamageEnabled: Boolean = true,
+    var serverDamageBackground: Boolean = true,
     var serverDamageRemove: Boolean = false,
-    var serverDamageShadow: Boolean = false,
+    var serverDamageShadow: Boolean = true,
+    var serverDamagePlayerHurt: Boolean = true,
+
+    var coinsInfoEnabled: Boolean = false,
+    var coinsInfoScale: Float = 1f,
+    var coinsInfoRight: Boolean = false,
+    var coinsInfoX: Float = 35f,
+    var coinsInfoY: Float = 50f,
+    var coinsInfoTwoLines: Boolean = true,
+    var coinsInfoScroll: Boolean = true,
+    var coinsInfoShowTotal: Boolean = true,
+    var coinsInfoShowAverage: Boolean = true,
+    var coinsInfoAverageUnit: String = "MINUTE",
+    var coinsInfoNumberFormat: String = "RAW",
+    var coinsInfoTotalColor: Int = 0xFFFFFFFF.toInt(),
+    var coinsInfoAverageColor: Int = 0xFFFFFFFF.toInt(),
+    var coinsInfoSessionTimeColor: Int = 0xFFFFFFFF.toInt(),
+    var coinsInfoKillsColor: Int = 0xFFFFFFFF.toInt(),
+    var coinsInfoDividerColor: Int = 0xFFFFD23C.toInt(),
+    var coinsInfoDividerBackground: Int = 0x40FFFFFF,
+    var coinsInfoBackground: Boolean = false,
+    var coinsInfoBackgroundColor: Int = 0xAA08080C.toInt(),
+    var coinsInfoOutline: Boolean = true,
+    var coinsInfoOutlineColor: Int = 0x40FFFFFF,
+    var coinsInfoTextShadow: Boolean = true,
+    var coinsInfoShowSessionTime: Boolean = true,
+    var coinsInfoShowKills: Boolean = true,
+
+    var broadcastEnabled: Boolean = false,
+    var broadcastHideChat: Boolean = false,
+    var broadcastBossBar: Boolean = false,
+    var broadcastSeconds: Float = 8f,
+    var broadcastWriteFile: Boolean = false,
+    var broadcastSound: Boolean = false,
+    var broadcastSoundMode: String = "ENDER_DRAGON",
+
+    var broadcast: BroadcastSettings = BroadcastSettings(),
+    var defaultsVersion: Int = 0,
 )
 
 object KillFeedbackConfigManager {
@@ -102,12 +143,58 @@ object KillFeedbackConfigManager {
         }.getOrElse {
             KillFeedbackConfig()
         }
-        if (config.pattern == KillRewardParser.LEGACY_DEFAULT_PATTERN) {
+        @Suppress("SENSELESS_COMPARISON")
+        if (config.broadcast == null) {
+            config.broadcast = BroadcastSettings()
+        }
+        if (sourcePath == null) {
+            config.broadcast.migrated = true
+            config.defaultsVersion = 1
+        }
+        var changed = BroadcastConfigMigrator.migrate(config)
+        if (config.defaultsVersion < 1) {
+            applyDefaultProfile(config)
+            config.defaultsVersion = 1
+            changed = true
+        }
+        if (changed) {
+            save()
+        }
+        if (config.pattern == KillRewardParser.LEGACY_DEFAULT_PATTERN ||
+            config.pattern == KillRewardParser.PREVIOUS_DEFAULT_PATTERN
+        ) {
             config.pattern = KillRewardParser.DEFAULT_PATTERN
             save()
         } else if (sourcePath != path) {
             save()
         }
+    }
+
+    private fun applyDefaultProfile(config: KillFeedbackConfig) {
+        config.enabled = true
+        config.intercept = true
+        config.includeOverlay = false
+        config.comboGroup = ComboGroup.NONE.name
+        config.postMode = PostComboMode.SPECIFIC.name
+        config.specificSound = PostComboSound.KILL_DF.name
+
+        config.coinsInfoTwoLines = true
+        config.coinsInfoX = 35f
+        config.coinsInfoY = 50f
+        config.coinsInfoRight = false
+
+        config.serverDamageEnabled = true
+        config.serverDamageBackground = true
+        config.serverDamageRemove = false
+        config.serverDamageShadow = true
+        config.serverDamagePlayerHurt = true
+
+        config.broadcast.enabled = false
+        config.broadcast.writeFile = true
+        config.broadcast.fileFormat = "CSV"
+        config.broadcast.migrated = true
+        config.broadcast.own = BroadcastPlayerSettings.default(showChat = true, showBossBar = true)
+        config.broadcast.other = BroadcastPlayerSettings.default(showChat = false, showBossBar = true)
     }
 
     private fun fillMissingDefaults(config: KillFeedbackConfig, json: JsonObject) {
@@ -125,7 +212,9 @@ object KillFeedbackConfigManager {
     }
 
     fun apply(newConfig: KillFeedbackConfig) {
-        config = newConfig.copy()
+        config = newConfig.deepCopy()
+        config.broadcast.migrated = true
+        config.defaultsVersion = 1
         save()
     }
 

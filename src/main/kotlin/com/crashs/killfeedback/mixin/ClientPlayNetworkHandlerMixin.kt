@@ -17,14 +17,26 @@ abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = ["onGameMessage"], at = [At("HEAD")], cancellable = true)
     private fun onGameMessage(packet: GameMessageS2CPacket, callbackInfo: CallbackInfo) {
-        if (KillFeedbackMod.handleMessage(packet.content(), packet.overlay())) {
+        if (KillFeedbackMod.handleMessage(
+                packet.content(),
+                packet.overlay(),
+                System.identityHashCode(packet),
+                System.identityHashCode(this),
+            )
+        ) {
             callbackInfo.cancel()
         }
     }
 
     @Inject(method = ["onOverlayMessage"], at = [At("HEAD")], cancellable = true)
     private fun onOverlayMessage(packet: OverlayMessageS2CPacket, callbackInfo: CallbackInfo) {
-        if (KillFeedbackMod.handleMessage(packet.text(), true)) {
+        if (KillFeedbackMod.handleMessage(
+                packet.text(),
+                true,
+                System.identityHashCode(packet),
+                System.identityHashCode(this),
+            )
+        ) {
             callbackInfo.cancel()
         }
     }

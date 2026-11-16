@@ -14,7 +14,14 @@ import net.minecraft.text.Text
  */
 object ServerDamageDisplayManager {
 
+    private enum class DamageTextKind {
+        ELEMENTAL,
+        PLAYER_HURT,
+    }
+
+    private val hurtPattern = Regex("""^-\d+(?:\.\d+)?$""")
     private val trackedIds = LinkedHashSet<Int>()
+    private val trackedKinds = HashMap<Int, DamageTextKind>()
     private val originalBackgrounds = HashMap<Int, Int>()
     private val originalFlags = HashMap<Int, Byte>()
     private val lock = Any()
@@ -24,11 +31,12 @@ object ServerDamageDisplayManager {
         if (!config.serverDamageEnabled || !config.serverDamageRemove) return false
 
         val text = textOf(packet) ?: return false
-        if (DamageElement.parse(text) == null) return false
+        val kind = classify(text) ?: return false
 
         val id = packet.id()
         synchronized(lock) {
             trackedIds += id
+            trackedKinds[id] = kind
         }
         entityOf(id)?.discard()
         return true
@@ -40,11 +48,12 @@ object ServerDamageDisplayManager {
         if (!config.serverDamageBackground && !config.serverDamageShadow) return
 
         val entity = entityOf(packet.id()) as? DisplayEntity.TextDisplayEntity ?: return
-        if (DamageElement.parse(entity.text) == null) return
+        val kind = classify(entity.text) ?: return
 
         val id = packet.id()
         synchronized(lock) {
             trackedIds += id
+            trackedKinds[id] = kind
             originalBackgrounds.putIfAbsent(id, entity.background)
             originalFlags.putIfAbsent(id, entity.displayFlags)
         }
@@ -67,6 +76,7 @@ object ServerDamageDisplayManager {
         synchronized(lock) {
             for (id in ids) {
                 trackedIds -= id
+                trackedKinds -= id
                 originalBackgrounds -= id
                 originalFlags -= id
             }
@@ -76,6 +86,7 @@ object ServerDamageDisplayManager {
     fun clearWorld() {
         synchronized(lock) {
             trackedIds.clear()
+            trackedKinds.clear()
             originalBackgrounds.clear()
             originalFlags.clear()
         }
@@ -89,6 +100,9 @@ object ServerDamageDisplayManager {
         if (!config.serverDamageEnabled) {
             restoreAll()
             return
+        }
+        if (!config.serverDamagePlayerHurt) {
+            restoreKind(DamageTextKind.PLAYER_HURT)
         }
         if (!config.serverDamageBackground) {
             restoreBackgrounds()
@@ -109,9 +123,38 @@ object ServerDamageDisplayManager {
                 }
             }
             trackedIds.clear()
+            trackedKinds.clear()
             originalBackgrounds.clear()
             originalFlags.clear()
         }
+    }
+
+    private fun restoreKind(kind: DamageTextKind) {
+        val level = MinecraftClient.getInstance().world
+        synchronized(lock) {
+            val ids = trackedKinds.filterValues { it == kind }.keys.toList()
+            if (level != null) {
+                for (id in ids) {
+                    val entity = level.getEntityById(id) as? DisplayEntity.TextDisplayEntity ?: continue
+                    originalBackgrounds[id]?.let { entity.background = it }
+                    originalFlags[id]?.let { entity.displayFlags = it }
+                }
+            }
+            for (id in ids) {
+                trackedIds -= id
+                trackedKinds -= id
+                originalBackgrounds -= id
+                originalFlags -= id
+            }
+        }
+    }
+
+    private fun classify(text: Text): DamageTextKind? {
+        if (DamageElement.parse(text) != null) return DamageTextKind.ELEMENTAL
+        if (KillFeedbackConfigManager.config.serverDamagePlayerHurt && hurtPattern.matches(text.string.trim())) {
+            return DamageTextKind.PLAYER_HURT
+        }
+        return null
     }
 
     private fun restoreBackgrounds() {

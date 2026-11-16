@@ -16,6 +16,8 @@ data class KillFeedEntry(
     val reward: KillReward,
     val createdAt: Long,
     var fadeStartedAt: Long? = null,
+    var shiftedAt: Long? = null,
+    var evicted: Boolean = false,
 ) {
     val isFading: Boolean get() = fadeStartedAt != null
 }
@@ -26,11 +28,16 @@ data class KillFeedSnapshot(
     val totalKills: Int,
     val windowStartedAt: Long,
     val windowEndsAt: Long,
+    val generation: Long,
 )
 
 object KillRewardParser {
 
     const val DEFAULT_PATTERN =
+        """^\s*!\s*你获得了\s+([0-9]+(?:\.[0-9]+)?)\s*金币(?:\s*[（(][^）)]*[）)])?\s*[，,]\s*来自(?:于)?\s+(.+?)\s*$"""
+
+    /** Default used before the optional VIP/bonus parenthesis was supported. */
+    const val PREVIOUS_DEFAULT_PATTERN =
         """^\s*!\s*你获得了\s+([0-9]+(?:\.[0-9]+)?)\s*金币\s*[，,]\s*来自(?:于)?\s+(.+?)\s*$"""
 
     /** Default emitted by 1.0.0 before the server's "来自于" wording was supported. */
@@ -84,7 +91,7 @@ object KillRewardParser {
 
 object KillFeedState {
 
-    const val FADE_DURATION_MS = 300L
+    const val FADE_DURATION_MS = 700L
 
     private val entries = ArrayDeque<KillFeedEntry>()
     private var nextId = 0L
@@ -92,6 +99,7 @@ object KillFeedState {
     private var totalKills = 0
     private var windowStartedAt = 0L
     private var windowEndsAt = 0L
+    private var generation = 0L
     private var lastRewardAt = 0L
     private var comboCount = 0
 
@@ -105,8 +113,13 @@ object KillFeedState {
 
         totalCoins += reward.coins
         totalKills++
+        CoinsSession.record(reward.coins, now)
         lastRewardAt = now
         comboCount++
+
+        for (entry in entries) {
+            entry.shiftedAt = now
+        }
 
         val entry = KillFeedEntry(
             id = nextId++,
@@ -153,7 +166,12 @@ object KillFeedState {
 
         val active = entries.filter { !it.isFading }
         if (active.size > limit) {
-            active.drop(limit).forEach { it.fadeStartedAt = now }
+            active.drop(limit).forEach { entry ->
+                if (entry.fadeStartedAt == null) {
+                    entry.fadeStartedAt = now
+                    entry.evicted = true
+                }
+            }
         }
 
         entries.removeIf { entry ->
@@ -169,6 +187,7 @@ object KillFeedState {
         totalKills = totalKills,
         windowStartedAt = windowStartedAt,
         windowEndsAt = windowEndsAt,
+        generation = generation,
     )
 
     @Synchronized
@@ -183,6 +202,7 @@ object KillFeedState {
         nextId = 0L
         windowStartedAt = 0L
         windowEndsAt = 0L
+        generation++
         lastRewardAt = 0L
         comboCount = 0
     }

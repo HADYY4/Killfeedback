@@ -1,4 +1,8 @@
 {
   "killfeedback.name": "KillFeedback",
-  "killfeedback.description": "击杀奖励统计、明细与连杀音效。"
+  "killfeedback.description": "击杀奖励统计、明细与连杀音效。",
+  "key.crashs-legacy.ui": "打开 Crashs Legacy 界面",
+  "key.categories.crashs-legacy": "Crashs Legacy",
+  "key.categories.crashs-legacy.main": "Crashs Legacy",
+  "key.category.crashs-legacy.main": "Crashs Legacy"
 }

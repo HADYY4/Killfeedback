@@ -1,11 +1,52 @@
 # Crashs Legacy
 
-Minecraft 1.21.11 的轻量客户端功能集合，包含 KillFeedback 击杀反馈与服务器伤害显示控制。
+> 快速跳转：[新手指南](#新手指南) · [功能截图](#功能截图) · [常用命令](#6-常用命令) · [更新日志](CHANGELOG.md)
 
-不依赖 LiquidBounce。
+Minecraft 1.21.11 的轻量客户端功能集合。
+专为无名纪行服务器定制的 击杀反馈（金币） 服务器伤害显示管理 金币统计 出货播报管理
+
+# 功能截图
+
+## 击杀反馈与金币统计
+
+`KillFeedback` 负责击杀金币反馈；`金币统计` 独立显示会话时长、总击杀、总金币与平均值。
+
+![击杀反馈与金币统计](docs/screenshots/hud.png)
+
+## 服务器伤害数字
+
+识别服务器生成的伤害 TextDisplay，并支持背景透明、阴影和玩家受伤文本。
+
+![服务器伤害数字](docs/screenshots/damage-numbers.png)
+
+## 播报 BossBar
+
+支持本玩家/其他玩家、关键词/红色/其他分类，以及分类独立的 BossBar、聊天拦截、时间和音效。
+
+![播报 BossBar](docs/screenshots/bossbar.png)
+
+## 播报查询
+
+按列筛选 SQLite/CSV 记录，支持分页、tooltip 和复制原始文本。
+
+![播报查询](docs/screenshots/query.png)
+
+## 功能概览
+
+- 击杀反馈：金币解析、统计窗口、HUD 列表、连杀音效和 C3 宽度稳定
+- 金币统计：独立会话 HUD、会话时间、总击杀、总金币、平均值、数字滚动
+- 服务器伤害显示：TextDisplay 伤害文本、玩家受伤文本、背景透明、阴影和移除
+- 播报管理：本玩家/其他玩家、关键词/红色/其他分类、独立聊天/BossBar/时间/音效
+- 播报存储：CSV 与 SQLite，SQLite 仅保留 Windows x64 native
+- 播报查询：按列筛选、分页、tooltip、复制原始文本
+- 快捷键：F7 打开 Crashs Legacy 功能菜单
 
 # 新手指南
 
+## 0. 最简易的教程
+
+安装: 扔到mods文件夹里 
+游戏版本1.21.11 fabric 需要安装fabric api和fabric language kotlin 无需任何其他前置 默认按F7打开配置界面（可在游戏自带快捷键设置处修改）
 ## 1. 准备环境
 
 安装：
@@ -23,7 +64,7 @@ Java 21
 把：
 
 ```text
-crashs-legacy-1.5.0+1.21.11.jar
+crashs-legacy-1.11.9+1.21.11.jar
 ```
 
 放入客户端：
@@ -52,8 +93,11 @@ Fabric Language Kotlin
 会打开 Crashs Legacy 功能菜单，包含：
 
 ```text
-KillFeedback 击杀反馈
+击杀反馈
 服务器伤害显示管理
+播报管理
+金币统计
+播报查询
 ```
 
 KillFeedback 配置界面包含四个页面：
@@ -70,6 +114,7 @@ HUD 与统计
 ```text
 /killfeedback ui
 /damagetext ui
+/crashs debugloot <message>
 ```
 
 常用操作：
@@ -155,6 +200,7 @@ X/Y 百分比位置
 
 ```text
 ! 你获得了 2 金币，来自于 Lv.5 荒林羊
+! 你获得了 2 金币 (VIP加成)，来自于 Lv.5 荒林羊
 ```
 
 也兼容：
@@ -175,10 +221,21 @@ X/Y 百分比位置
 ## 6. 常用命令
 
 ```text
-/crashs ui          打开 Crashs Legacy 功能菜单
-/killfeedback ui    打开 KillFeedback 配置
-/damagetext ui      打开服务器伤害显示配置
+/crashs ui                    打开 Crashs Legacy 功能菜单
+/crashs debugloot <message>   把文本组件送入播报入口调试
+/killfeedback ui              打开 KillFeedback 配置
+/damagetext ui                打开服务器伤害显示配置
 ```
+
+也可以直接在游戏中按：
+
+```text
+F7
+```
+
+打开 Crashs Legacy 功能菜单。
+
+`F7` 可在原版按键设置的独立 `Crashs Legacy` 分类中修改。
 
 手动编辑：
 
@@ -367,7 +424,7 @@ gradlew.bat build
 产物：
 
 ```text
-build/libs/crashs-legacy-1.5.0+1.21.11.jar
+build/libs/crashs-legacy-1.11.9+1.21.11.jar
 ```
 
 将 jar 放入游戏实例的 `mods/` 目录。
@@ -390,7 +447,7 @@ gradlew.bat runClient
 需要临时指定名称时：
 
 ```bash
-gradlew.bat runClient --args="--username Player"
+gradlew.bat runClient --args="--username xFenx"
 ```
 
 ## 功能
@@ -487,24 +544,24 @@ config/crashs-legacy.json
   "sound": true,
   "soundVolume": 1.0,
   "soundPitch": 1.0,
-  "comboGroup": "CF",
-  "postMode": "LAST_OF_GROUP",
+  "comboGroup": "NONE",
+  "postMode": "SPECIFIC",
   "specificSound": "KILL_DF",
   "hud": true,
   "hudScale": 1.0,
-  "hudRight": true,
-  "hudX": 2.0,
-  "hudY": 10.0,
+  "hudRight": false,
+  "hudX": 50.0,
+  "hudY": 50.0,
   "statsWindowSeconds": 8.0,
   "maxRows": 5,
   "entryDurationSeconds": 5.0,
   "headerStyle": "FULL",
   "background": false,
   "showProgress": true,
-  "serverDamageEnabled": false,
-  "serverDamageBackground": false,
+  "serverDamageEnabled": true,
+  "serverDamageBackground": true,
   "serverDamageRemove": false,
-  "serverDamageShadow": false
+  "serverDamageShadow": true
 }
 ```
 
@@ -573,7 +630,7 @@ KILLS_ONLY
 HIDDEN
 ```
 
-`hudRight` 为 `true` 时右上角对齐，否则左上角对齐。
+`hudRight` 为 `true` 时按右侧坐标计算，否则按左侧坐标计算。
 
 `hudX` / `hudY` 使用屏幕百分比：
 
@@ -582,7 +639,7 @@ HIDDEN
 100 = 另一侧边缘
 ```
 
-例如右上角对齐、`hudX = 2` 表示距离右边 2% 屏宽。
+默认 `hudRight = false`、`hudX = 50`、`hudY = 50`，即屏幕中央位置。
 
 ## 音效
 
@@ -635,7 +692,7 @@ SPECIFIC
 
 ## 已知限制
 
-- 默认正则只匹配 `! 你获得了 ... 金币，来自 ...`
+- 默认正则匹配 `! 你获得了 ... 金币，来自 ...`，并支持金币后的 VIP/加成括号说明
 - 其他服务器消息格式需要修改 `pattern`
 - 没有配置界面，使用命令与 JSON
 - HUD 字体使用原版字体，不包含自定义字体渲染

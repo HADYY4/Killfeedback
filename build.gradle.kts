@@ -13,10 +13,21 @@ base {
     archivesName.set(providers.gradleProperty("archives_base_name").get())
 }
 
+loom {
+    runs {
+        named("client") {
+            programArgs("--username", "xFenx")
+        }
+    }
+}
+
 repositories {
     mavenCentral()
     maven("https://maven.fabricmc.net/")
+    maven { url = uri(layout.projectDirectory.dir("libs/repo")) }
 }
+
+val sqliteRuntime by configurations.creating { isTransitive = false }
 
 dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
@@ -25,6 +36,16 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:${providers.gradleProperty("loader_version").get()}")
     modImplementation("net.fabricmc.fabric-api:fabric-api:${providers.gradleProperty("fabric_api_version").get()}")
     modImplementation("net.fabricmc:fabric-language-kotlin:${providers.gradleProperty("fabric_kotlin_version").get()}")
+
+    // Vendored Windows-only build of fabric-gui-imgui, served from a local Maven repo
+    // so Loom can treat it as a normal JIJ module.
+    modImplementation("cn.enaium:fabric-gui-imgui:1.21.11-1.2.0-windows3")
+    include("cn.enaium:fabric-gui-imgui:1.21.11-1.2.0-windows3")
+    // The ImGui Java API is nested inside the library; expose it for Kotlin compilation.
+    compileOnly(files("libs/imgui-java-binding-1.92.7.1.jar"))
+
+    implementation("org.xerial:sqlite-jdbc:3.46.1.0")
+    sqliteRuntime("org.xerial:sqlite-jdbc:3.46.1.0")
 }
 
 java {
@@ -51,6 +72,21 @@ tasks.processResources {
 }
 
 tasks.jar {
+    from({ sqliteRuntime.files.map { zipTree(it) } }) {
+        exclude("META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+        // Keep only the Windows x64 SQLite native; the full driver is ~18 MB.
+        exclude(
+            "org/sqlite/native/FreeBSD/**",
+            "org/sqlite/native/Linux-Android/**",
+            "org/sqlite/native/Linux-Musl/**",
+            "org/sqlite/native/Linux/**",
+            "org/sqlite/native/Mac/**",
+            "org/sqlite/native/Windows/aarch64/**",
+            "org/sqlite/native/Windows/armv7/**",
+            "org/sqlite/native/Windows/x86/**",
+        )
+    }
+
     from("LICENSE") {
         rename { "${it}_${project.base.archivesName.get()}" }
     }
